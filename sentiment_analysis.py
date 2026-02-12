@@ -49,3 +49,13 @@ val_text, val_emotion, test_text, test_emotion = train_test_split(
     random_state=42,
     stratify=temp_emotion
 )
+
+# tokenizer and bert pretrain
+model_name = "bert-base-uncased"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+modeel = BertForSequenceClassification.from_pretrained(
+    model_name,
+    num_labels=len(label2id),
+    label2id=label2id,
+    id2label=id2label
+)
