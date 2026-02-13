@@ -1,9 +1,9 @@
 import pandas as pd
 import torch
+from torch.optim import AdamW
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, BertForSequenceClassification, BertTokenizer, DataCollatorWithPadding
 from sklearn.model_selection import train_test_split
-from typing import cast
 
 
 class EmotionDataset(Dataset):
@@ -101,4 +101,41 @@ test_loader = DataLoader(
 )
 
 
+# optimizer for model
+optim = AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
+
+# dropout
+model.config.hidden_dropout_prob = 0.3
+
 # fine-tune model
+for epoc in range(3):
+
+    # train loop
+    model.train()
+    train_loss = 0
+
+    for batch in train_loader:
+        batch = {k: v.to(device) for k, v in batch.items()}
+        optim.zero_grad()
+        outputs = model(**batch)
+        loss     = outputs.loss
+        loss.backward()
+        optim.step()
+        train_loss += loss.item()
+
+    train_loss /= len(train_loader)
+
+    # eval loop
+    model.eval()
+    val_loss = 0
+
+    with torch.no_grad():
+        for batch in val_loader:
+            batch = {k: v.to(device) for k, v in batch.items()}
+            outputs = model(**batch)
+            loss = outputs.loss
+            val_loss += loss.item()
+
+        val_loss /= len(val_loader)
+
+    print(f"{epoc}, train loss = {train_loss:.2f}, val loss = {val_loss:.2f}")
