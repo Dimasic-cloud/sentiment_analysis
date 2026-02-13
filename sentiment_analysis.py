@@ -1,38 +1,49 @@
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, BertForSequenceClassification
+from transformers import AutoTokenizer, BertForSequenceClassification, BertTokenizer
 from sklearn.model_selection import train_test_split
+from typing import cast
 
 
 class EmotionDataset(Dataset):
     "class for storage and batching data"
 
-    def __init__(self, encodings, labels):
-        "inicialization encoding (token from dataset) and labels (emotion from dataset)"
-        self.encodings = encodings
+    def __init__(self, texts, labels, tokenizer):
+        "inicialization encoding (token from dataset), labels (emotion from dataset) and tokenizer(data tokenization)"
+        self.texts = texts
         self.labels = labels
+        self.tokenizer = tokenizer
 
     def __len__(self):
         "count rows in dataset"
         return len(self.labels)
 
     def __getitem__(self, idx):
-        "getting item by index"
-        item = {k: v[idx] for k, v in self.encodings.items()}
+        "batch tokenization and getting item by index"
+        encoding = self.tokenizer(
+            self.texts[idx],
+            truncation=True,  # cutting long text
+            max_length=128,
+            return_tensors="pt"
+        )
+        item = {k: v.squeeze(0) for k, v in encoding.items()}
         item["labels"] = torch.tensor(self.labels[idx])
         return item
 
 
+# device for processing on GPU
+device = torch.device("cuda" if torch.cuda.is_available() else "CPU")
+
 # dividing data
 emotion_dataset = pd.read_csv("emotion_dataset_raw.csv")
-text, emotion = emotion_dataset["Text"], emotion_dataset["Emotion"]
+text, emotion = emotion_dataset["Text"].tolist(), emotion_dataset["Emotion"]
 
 # getting unique emotion
 unique_emotion = emotion.unique()
 label2id = {label: idx for idx, label in enumerate(unique_emotion)}
 id2label = {idx: label for label, idx in label2id.items()}
-emotion = emotion.map(label2id)
+emotion = emotion.map(label2id).tolist()
 
 # devided data into train/val/test
 train_text, temp_text, train_emotion, temp_emotion = train_test_split(
@@ -42,7 +53,7 @@ train_text, temp_text, train_emotion, temp_emotion = train_test_split(
     random_state=42,
     stratify=emotion
 )
-val_text, val_emotion, test_text, test_emotion = train_test_split(
+val_text, test_text, val_emotion, test_emotion = train_test_split(
     temp_text,
     temp_emotion,
     test_size=0.5,
@@ -52,10 +63,12 @@ val_text, val_emotion, test_text, test_emotion = train_test_split(
 
 # tokenizer and bert pretrain
 model_name = "bert-base-uncased"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-modeel = BertForSequenceClassification.from_pretrained(
+tokenizer: BertTokenizer = AutoTokenizer.from_pretrained(model_name)
+model: BertForSequenceClassification = BertForSequenceClassification.from_pretrained(
     model_name,
     num_labels=len(label2id),
     label2id=label2id,
     id2label=id2label
 )
+model = model.to(device)
+
