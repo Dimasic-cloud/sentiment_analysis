@@ -1,7 +1,7 @@
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, BertForSequenceClassification, BertTokenizer
+from transformers import AutoTokenizer, BertForSequenceClassification, BertTokenizer, DataCollatorWithPadding
 from sklearn.model_selection import train_test_split
 from typing import cast
 
@@ -72,3 +72,33 @@ model: BertForSequenceClassification = BertForSequenceClassification.from_pretra
 )
 model = model.to(device)
 
+# function datacollator for dynamic padding
+data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+
+# train loader
+train_dataset = EmotionDataset(train_text, train_emotion, tokenizer)
+train_loader = DataLoader(
+    dataset=train_dataset,
+    batch_size=32,
+    shuffle=True,
+    collate_fn=data_collator
+)
+
+val_dataset = EmotionDataset(val_text, val_emotion, tokenizer)
+val_loader = DataLoader(
+    dataset=val_dataset,
+    batch_size=16,
+    shuffle=True,
+    collate_fn=data_collator
+)
+
+test_dataset = EmotionDataset(test_text, test_emotion, tokenizer)
+test_loader = DataLoader(
+    dataset=test_dataset,
+    batch_size=16,
+    shuffle=True,
+    collate_fn=data_collator
+)
+
+
+# fine-tune model
