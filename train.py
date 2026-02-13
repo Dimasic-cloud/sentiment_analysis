@@ -32,6 +32,16 @@ class EmotionDataset(Dataset):
         return item
 
 
+def freez_layer(model):
+    for name, param in model.bert.named_parameters():
+        if "encoder.layer.0" in name \
+        or "encoder.layer.1" in name \
+        or "encoder.layer.2" in name \
+        or "encoder.layer.3" in name \
+        or "encoder.layer.4" in name \
+        or "encoder.layer.5" in name:
+            param.requires_grad = False
+
 # device for processing on GPU
 device = torch.device("cuda" if torch.cuda.is_available() else "CPU")
 
@@ -101,11 +111,14 @@ test_loader = DataLoader(
 )
 
 
+freez_layer(model=model)
 # optimizer for model
 optim = AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
 
 # dropout
 model.config.hidden_dropout_prob = 0.3
+
+best_val_loss = float("inf")
 
 # fine-tune model
 for epoc in range(3):
@@ -139,3 +152,10 @@ for epoc in range(3):
         val_loss /= len(val_loader)
 
     print(f"{epoc}, train loss = {train_loss:.2f}, val loss = {val_loss:.2f}")
+
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+
+        # saved model and tokenizer
+        model.save_pretrained("best_model")
+        tokenizer.save_pretrained("best_model")
