@@ -1,8 +1,9 @@
 import pandas as pd
 import torch
 from torch.optim import AdamW
+from torch.amp import autocast, GradScaler
 from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, BertForSequenceClassification, BertTokenizer, DataCollatorWithPadding
+from transformers import AutoTokenizer, BertForSequenceClassification, BertTokenizer, DataCollatorWithPadding, get_linear_schedule_with_warmup
 from sklearn.model_selection import train_test_split
 
 
@@ -32,6 +33,7 @@ class EmotionDataset(Dataset):
         return item
 
 
+# freezing of lower layers
 def freez_layer(model):
     for name, param in model.bert.named_parameters():
         if "encoder.layer.0" in name \
@@ -42,8 +44,17 @@ def freez_layer(model):
         or "encoder.layer.5" in name:
             param.requires_grad = False
 
+# unfreezing of lower layers
+def unfreez(model):
+    for param in model.bert.parameters():
+        param.requires_grad = True
+
 # device for processing on GPU
 device = torch.device("cuda" if torch.cuda.is_available() else "CPU")
+
+# field
+best_val_loss = float("inf")
+epocs = 3
 
 # dividing data
 emotion_dataset = pd.read_csv("emotion_dataset_raw.csv")
@@ -77,6 +88,8 @@ tokenizer: BertTokenizer = AutoTokenizer.from_pretrained(model_name)
 model: BertForSequenceClassification = BertForSequenceClassification.from_pretrained(
     model_name,
     num_labels=len(label2id),
+    hidden_dropout_prob=0.3,
+    attention_probs_dropout_prob=0.3,
     label2id=label2id,
     id2label=id2label
 )
@@ -111,17 +124,25 @@ test_loader = DataLoader(
 )
 
 
+# freezing layer
 freez_layer(model=model)
+
 # optimizer for model
-optim = AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
-
-# dropout
-model.config.hidden_dropout_prob = 0.3
-
-best_val_loss = float("inf")
+optim = AdamW(model.parameters(), lr=2e-5, weight_decay=0.03)
+scaler = GradScaler(device=device)
+total_steps = len(train_loader) * epocs
+scheduler = get_linear_schedule_with_warmup(
+    optimizer=optim,
+    num_warmup_steps=int(0.1 * total_steps),
+    num_training_steps=total_steps
+)
 
 # fine-tune model
-for epoc in range(3):
+for epoc in range(epocs):
+
+    # unfreezing lower layers after 2 epoc
+    if epoc == 2:
+        unfreez(model=model)
 
     # train loop
     model.train()
@@ -130,10 +151,17 @@ for epoc in range(3):
     for batch in train_loader:
         batch = {k: v.to(device) for k, v in batch.items()}
         optim.zero_grad()
-        outputs = model(**batch)
-        loss     = outputs.loss
-        loss.backward()
-        optim.step()
+
+        # autocast - choice float16 or float32
+        with autocast(device_type=device):
+            outputs = model(**batch)
+            loss     = outputs.loss
+
+        scaler.scale(loss).backward()  # counting grad
+        torch.nn.utils.clip_grad_norm_(parameters=model.parameters(), max_norm=1.0)  # gradient clipping
+        scaler.step(optim)  # update weights model
+        scaler.update()
+        scheduler.step()  # change lr
         train_loss += loss.item()
 
     train_loss /= len(train_loader)
