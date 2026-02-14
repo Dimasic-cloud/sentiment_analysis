@@ -1,7 +1,7 @@
 # sentiment_analysis
-version - 0.1
+version - 1.0
 LICENSE - GNU AFFERO GENERAL PUBLIC LICENSE
-built status - active
+built status - finish
 description - Text classification based on BERT
 
 ## features
@@ -45,17 +45,21 @@ pip install torch --index-url https://download.pytorch.org/whl/cu118
 ## usage
 python train.py
 - for train model and saved it into folder
+python eval.py
+- for download model and tokenizer and test model
 
 ## structure
 sentiment-analysis/
     emotion_dataset_raw.csv
+    eval.py
     LICENSE
     README.md
     requirements.txt
+    test_dataset.csv
     train.py
 
 
-    # tech stack
+# tech stack
 python
 torch
 transformers
