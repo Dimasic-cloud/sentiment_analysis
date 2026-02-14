@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import torch
 from torch.optim import AdamW
@@ -34,7 +35,7 @@ class EmotionDataset(Dataset):
 
 
 # device for processing on GPU
-device = "cuda" if torch.cuda.is_available() else "CPU"
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # field
 best_val_loss = float("inf")
@@ -66,6 +67,15 @@ val_text, test_text, val_emotion, test_emotion = train_test_split(
     stratify=temp_emotion
 )
 
+# writing test text/emotion into file
+test_selection = pd.concat(
+    [
+        pd.Series(test_emotion, name="Emotion"),
+        pd.Series(test_text, name="Text")
+        ],
+        axis=1)
+test_selection.to_csv("test_dataset.csv")
+
 # tokenizer and bert pretrain
 model_name = "bert-base-uncased"
 tokenizer: BertTokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -95,14 +105,6 @@ val_dataset = EmotionDataset(val_text, val_emotion, tokenizer)
 val_loader = DataLoader(
     dataset=val_dataset,
     batch_size=16,
-    collate_fn=data_collator
-)
-
-test_dataset = EmotionDataset(test_text, test_emotion, tokenizer)
-test_loader = DataLoader(
-    dataset=test_dataset,
-    batch_size=16,
-    shuffle=True,
     collate_fn=data_collator
 )
 
