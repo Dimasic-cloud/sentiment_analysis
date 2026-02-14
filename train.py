@@ -148,50 +148,51 @@ scheduler = get_linear_schedule_with_warmup(
     num_training_steps=total_steps
 )
 
-# fine-tune model
-for epoc in range(epocs):
+if __name__ == "__main__":
+    # fine-tune model
+    for epoc in range(epocs):
 
-    # train loop
-    model.train()
-    train_loss = 0
+        # train loop
+        model.train()
+        train_loss = 0
 
-    for batch in train_loader:
-        batch = {k: v.to(device) for k, v in batch.items()}
-        optim.zero_grad()
-
-        # autocast - choice float16 or float32
-        with autocast(device_type=device):
-            outputs = model(**batch)
-            loss     = outputs.loss
-
-        scaler.scale(loss).backward()  # counting grad
-        scaler.unscale_(optim)
-        torch.nn.utils.clip_grad_norm_(parameters=model.parameters(), max_norm=1.0)  # gradient clipping
-        scaler.step(optim)  # update weights model
-        scaler.update()
-        scheduler.step()  # change lr
-        train_loss += loss.item()
-
-    train_loss /= len(train_loader)
-
-    # eval loop
-    model.eval()
-    val_loss = 0
-
-    with torch.no_grad():
-        for batch in val_loader:
+        for batch in train_loader:
             batch = {k: v.to(device) for k, v in batch.items()}
-            outputs = model(**batch)
-            loss = outputs.loss
-            val_loss += loss.item()
+            optim.zero_grad()
 
-        val_loss /= len(val_loader)
+            # autocast - choice float16 or float32
+            with autocast(device_type=device):
+                outputs = model(**batch)
+                loss     = outputs.loss
 
-    print(f"{epoc}, train loss = {train_loss:.2f}, val loss = {val_loss:.2f}")
+            scaler.scale(loss).backward()  # counting grad
+            scaler.unscale_(optim)
+            torch.nn.utils.clip_grad_norm_(parameters=model.parameters(), max_norm=1.0)  # gradient clipping
+            scaler.step(optim)  # update weights model
+            scaler.update()
+            scheduler.step()  # change lr
+            train_loss += loss.item()
 
-    if val_loss < best_val_loss:
-        best_val_loss = val_loss
+        train_loss /= len(train_loader)
 
-        # saved model and tokenizer
-        model.save_pretrained("best_model")
-        tokenizer.save_pretrained("best_model")
+        # eval loop
+        model.eval()
+        val_loss = 0
+
+        with torch.no_grad():
+            for batch in val_loader:
+                batch = {k: v.to(device) for k, v in batch.items()}
+                outputs = model(**batch)
+                loss = outputs.loss
+                val_loss += loss.item()
+
+            val_loss /= len(val_loader)
+
+        print(f"{epoc}, train loss = {train_loss:.2f}, val loss = {val_loss:.2f}")
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+
+            # saved model and tokenizer
+            model.save_pretrained("best_model")
+            tokenizer.save_pretrained("best_model")
