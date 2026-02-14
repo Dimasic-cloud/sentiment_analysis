@@ -33,28 +33,12 @@ class EmotionDataset(Dataset):
         return item
 
 
-# freezing of lower layers
-def freez_layer(model):
-    for name, param in model.bert.named_parameters():
-        if "encoder.layer.0" in name \
-        or "encoder.layer.1" in name \
-        or "encoder.layer.2" in name \
-        or "encoder.layer.3" in name \
-        or "encoder.layer.4" in name \
-        or "encoder.layer.5" in name:
-            param.requires_grad = False
-
-# unfreezing of lower layers
-def unfreez(model):
-    for param in model.bert.parameters():
-        param.requires_grad = True
-
 # device for processing on GPU
-device = torch.device("cuda" if torch.cuda.is_available() else "CPU")
+device = "cuda" if torch.cuda.is_available() else "CPU"
 
 # field
 best_val_loss = float("inf")
-epocs = 3
+epocs = 5
 
 # dividing data
 emotion_dataset = pd.read_csv("emotion_dataset_raw.csv")
@@ -111,7 +95,6 @@ val_dataset = EmotionDataset(val_text, val_emotion, tokenizer)
 val_loader = DataLoader(
     dataset=val_dataset,
     batch_size=16,
-    shuffle=True,
     collate_fn=data_collator
 )
 
@@ -124,11 +107,37 @@ test_loader = DataLoader(
 )
 
 
-# freezing layer
-freez_layer(model=model)
+# params for optim - LLRD
+optim_groupp_params = [
+    {
+        "params": model.classifier.parameters(),
+        "lr": 2e-5
+    },
+]
+layer_lrs = {
+    11: 1e-5,
+    10: 1e-5,
+    9: 8e-6,
+    8: 8e-6,
+    7: 6e-6,
+    6: 6e-6,
+    5: 4e-6,
+    4: 4e-6,
+    3: 3e-6,
+    2: 3e-6,
+    1: 2e-6,
+    0: 2e-6,
+}
+for layer_num, lr in layer_lrs.items():
+    optim_groupp_params.append(
+        {
+            "params": model.bert.encoder.layer[layer_num].parameters(),
+            "lr": lr
+        }
+    )
 
 # optimizer for model
-optim = AdamW(model.parameters(), lr=2e-5, weight_decay=0.03)
+optim = AdamW(optim_groupp_params, weight_decay=0.03)
 scaler = GradScaler(device=device)
 total_steps = len(train_loader) * epocs
 scheduler = get_linear_schedule_with_warmup(
@@ -139,10 +148,6 @@ scheduler = get_linear_schedule_with_warmup(
 
 # fine-tune model
 for epoc in range(epocs):
-
-    # unfreezing lower layers after 2 epoc
-    if epoc == 2:
-        unfreez(model=model)
 
     # train loop
     model.train()
@@ -158,6 +163,7 @@ for epoc in range(epocs):
             loss     = outputs.loss
 
         scaler.scale(loss).backward()  # counting grad
+        scaler.unscale_(optim)
         torch.nn.utils.clip_grad_norm_(parameters=model.parameters(), max_norm=1.0)  # gradient clipping
         scaler.step(optim)  # update weights model
         scaler.update()
